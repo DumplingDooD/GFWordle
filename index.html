@@ -266,49 +266,6 @@
     transform:translateX(-50%) translateY(-4px);
   }
 
-  .modalOverlay{
-    position:fixed;
-    inset:0;
-    background:rgba(0,0,0,.55);
-    display:none;
-    align-items:center;
-    justify-content:center;
-    padding:14px;
-    z-index:50;
-  }
-  .modalOverlay.show{display:flex;}
-  .modal{
-    width:min(520px,100%);
-    background:var(--bg);
-    color:var(--fg);
-    border-radius:14px;
-    border:1px solid var(--border);
-    box-shadow:var(--shadow);
-    overflow:hidden;
-  }
-  .modal header{
-    background:var(--panel);
-    padding:10px 12px;
-    border-bottom:1px solid var(--border);
-  }
-  .modal header h2{
-    margin:0;
-    font-size:14px;
-    letter-spacing:.08em;
-    text-transform:uppercase;
-  }
-  .modal .body{padding:12px;}
-  .modal .footer{
-    padding:10px 12px;
-    border-top:1px solid var(--border);
-    display:flex;
-    gap:8px;
-    justify-content:flex-end;
-    flex-wrap:wrap;
-  }
-  .help{font-size:12px;color:var(--muted);}
-
-  /* hidden input for mobile keyboard */
   #hiddenInput{
     position:absolute;
     opacity:0;
@@ -339,31 +296,20 @@
   </header>
 
   <div class="note">
-    5-letter Wordle-style game. Any 5-letter A–Z word is accepted. Needs internet to fetch a random secret word; recent answers are remembered to avoid repeats.
+    Any 5-letter A–Z word is accepted. On phones, tap the board or keys once to bring up the keyboard.
   </div>
 
   <main id="main">
     <div class="boardWrap">
-      <div class="board" id="board" role="grid" aria-label="Word game board"></div>
+      <div class="board" id="board" role="grid"></div>
     </div>
-    <div class="kbdWrap" id="keyboard" aria-label="On-screen keyboard"></div>
-    <!-- Hidden text input to trigger mobile keyboards -->
+    <div class="kbdWrap" id="keyboard"></div>
     <input id="hiddenInput" inputmode="text" autocomplete="off" autocorrect="off"
            autocapitalize="none" spellcheck="false" />
   </main>
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-
-<div class="modalOverlay" id="modalOverlay" aria-hidden="true">
-  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
-    <header>
-      <h2 id="modalTitle">Modal</h2>
-    </header>
-    <div class="body" id="modalBody"></div>
-    <div class="footer" id="modalFooter"></div>
-  </div>
-</div>
 
 <script>
 (() => {
@@ -372,10 +318,8 @@
   const LENGTH = 5;
   const ATTEMPTS = 6;
   const USED_LIMIT = 30;
-  const LS_SETTINGS = "owOnlineKB_settings";
-  const LS_USED = "owOnlineKB_usedSecrets";
-
-  // random 5-letter word API
+  const LS_SETTINGS = "owKB_settings";
+  const LS_USED = "owKB_usedSecrets";
   const WORD_ENDPOINT = "https://random-word-api.herokuapp.com/word?number=1&length=5";
 
   const $ = (s,r=document)=>r.querySelector(s);
@@ -388,10 +332,6 @@
   const toastEl = $("#toast");
   const newBtn = $("#newBtn");
   const darkToggle = $("#darkToggle");
-  const modalOverlay = $("#modalOverlay");
-  const modalTitle = $("#modalTitle");
-  const modalBody = $("#modalBody");
-  const modalFooter = $("#modalFooter");
   const hiddenInput = $("#hiddenInput");
   const mainEl = $("#main");
 
@@ -403,40 +343,7 @@
     toastTimer=setTimeout(()=>toastEl.classList.remove("show"),ms);
   }
 
-  function el(tag,props={},children=[]){
-    const n=document.createElement(tag);
-    for(const [k,v] of Object.entries(props)){
-      if(k==="class") n.className=v;
-      else if(k==="text") n.textContent=v;
-      else if(k==="html") n.innerHTML=v;
-      else if(k==="attrs"){ for(const [ak,av] of Object.entries(v)) n.setAttribute(ak,String(av)); }
-      else if(k.startsWith("on") && typeof v==="function") n.addEventListener(k.slice(2),v);
-      else n[k]=v;
-    }
-    children.forEach(c=>n.appendChild(c));
-    return n;
-  }
-
-  function openModal(title,bodyNodes,footerNodes){
-    modalTitle.textContent=title;
-    modalBody.innerHTML="";
-    modalFooter.innerHTML="";
-    bodyNodes.forEach(n=>modalBody.appendChild(n));
-    footerNodes.forEach(n=>modalFooter.appendChild(n));
-    modalOverlay.classList.add("show");
-    modalOverlay.setAttribute("aria-hidden","false");
-  }
-  function closeModal(){
-    modalOverlay.classList.remove("show");
-    modalOverlay.setAttribute("aria-hidden","true");
-    focusHiddenInput();
-  }
-  modalOverlay.addEventListener("click",e=>{ if(e.target===modalOverlay) closeModal(); });
-  window.addEventListener("keydown",e=>{
-    if(e.key==="Escape" && modalOverlay.classList.contains("show")) closeModal();
-  });
-
-  function loadJSON(key,fallback){
+  function loadJSON(key, fallback){
     try{
       const raw=localStorage.getItem(key);
       if(!raw) return fallback;
@@ -461,9 +368,9 @@
 
   let usedSecrets = loadJSON(LS_USED,[]);
   if(!Array.isArray(usedSecrets)) usedSecrets=[];
-  function rememberSecret(word){
-    usedSecrets.unshift(word);
-    usedSecrets = usedSecrets.filter((w,i)=>i<USED_LIMIT);
+  function rememberSecret(w){
+    usedSecrets.unshift(w);
+    usedSecrets=usedSecrets.filter((x,i)=>i<USED_LIMIT);
     saveJSON(LS_USED,usedSecrets);
   }
 
@@ -472,30 +379,21 @@
   }
 
   async function fetchSecret(){
-    for(let attempt=0; attempt<5; attempt++){
+    for(let t=0;t<5;t++){
       try{
         const res = await fetch(WORD_ENDPOINT,{cache:"no-store"});
         const data = await res.json();
-        let w = Array.isArray(data) ? String(data[0]||"") : String(data||"");
-        w = w.toUpperCase();
+        let w = Array.isArray(data)? String(data[0]||"") : String(data||"");
+        w=w.toUpperCase();
         if(!isAZWord(w,LENGTH)) continue;
         if(usedSecrets.includes(w)) continue;
         return w;
-      }catch{
-        // retry
-      }
+      }catch{}
     }
-    try{
-      const res = await fetch(WORD_ENDPOINT,{cache:"no-store"});
-      const data = await res.json();
-      let w = Array.isArray(data) ? String(data[0]||"") : String(data||"");
-      w = w.toUpperCase();
-      if(isAZWord(w,LENGTH)) return w;
-    }catch{}
     return null;
   }
 
-  const KEY_ROWS = ["QWERTYUIOP","ASDFGHJKL","ZXCVBNM"];
+  const KEY_ROWS=["QWERTYUIOP","ASDFGHJKL","ZXCVBNM"];
 
   let game=null;
   function emptyGame(){
@@ -512,8 +410,8 @@
     };
   }
 
-  function setSubLine(status){
-    subLineEl.textContent = status || (game && game.inProgress ? "Guess the word!" : "Ready");
+  function setSubLine(text){
+    subLineEl.textContent=text;
   }
 
   function tileSize(){
@@ -527,21 +425,54 @@
     appEl.style.setProperty("--tile-size",tileSize()+"px");
     const frag=document.createDocumentFragment();
     for(let r=0;r<ATTEMPTS;r++){
-      const row=el("div",{class:"row",attrs:{role:"row","data-row":r}});
+      const row=document.createElement("div");
+      row.className="row";
+      row.dataset.row=r;
       for(let c=0;c<LENGTH;c++){
-        row.appendChild(el("div",{class:"tile",attrs:{role:"gridcell","data-row":r,"data-col":c}}));
+        const tile=document.createElement("div");
+        tile.className="tile";
+        tile.dataset.row=r;
+        tile.dataset.col=c;
+        row.appendChild(tile);
       }
       frag.appendChild(row);
     }
     boardEl.appendChild(frag);
-    syncBoard();
+  }
+
+  function buildKeyboard(){
+    keyboardEl.innerHTML="";
+    const r1=document.createElement("div");
+    r1.className="kbdRow";
+    const r2=document.createElement("div");
+    r2.className="kbdRow";
+    const r3=document.createElement("div");
+    r3.className="kbdRow";
+    for(const ch of KEY_ROWS[0]) r1.appendChild(makeKey(ch));
+    for(const ch of KEY_ROWS[1]) r2.appendChild(makeKey(ch));
+    r3.appendChild(makeKey("ENTER",true));
+    for(const ch of KEY_ROWS[2]) r3.appendChild(makeKey(ch));
+    r3.appendChild(makeKey("⌫",true,"BACKSPACE"));
+    keyboardEl.appendChild(r1);
+    keyboardEl.appendChild(r2);
+    keyboardEl.appendChild(r3);
+  }
+
+  function makeKey(label,wide=false,codeOverride=null){
+    const code=codeOverride||label;
+    const btn=document.createElement("button");
+    btn.type="button";
+    btn.className="key"+(wide?" wide":"");
+    btn.textContent=label;
+    btn.dataset.key=code;
+    btn.onclick=()=>{ focusHidden(); handleKey(code); };
+    return btn;
   }
 
   function tileEl(r,c){ return boardEl.querySelector(`.tile[data-row="${r}"][data-col="${c}"]`); }
   function rowEl(r){ return boardEl.querySelector(`.row[data-row="${r}"]`); }
 
   function syncBoard(){
-    if(!game) return;
     for(let r=0;r<ATTEMPTS;r++){
       const g=game.guesses[r]||"";
       const ev=game.evals[r];
@@ -560,38 +491,11 @@
     }
   }
 
-  function buildKeyboard(){
-    keyboardEl.innerHTML="";
-    const r1=el("div",{class:"kbdRow"});
-    const r2=el("div",{class:"kbdRow"});
-    const r3=el("div",{class:"kbdRow"});
-    for(const ch of KEY_ROWS[0]) r1.appendChild(makeKey(ch));
-    for(const ch of KEY_ROWS[1]) r2.appendChild(makeKey(ch));
-    r3.appendChild(makeKey("ENTER",true));
-    for(const ch of KEY_ROWS[2]) r3.appendChild(makeKey(ch));
-    r3.appendChild(makeKey("⌫",true,"BACKSPACE"));
-    keyboardEl.appendChild(r1);
-    keyboardEl.appendChild(r2);
-    keyboardEl.appendChild(r3);
-    syncKeyboard();
-  }
-
-  function makeKey(label,wide=false,codeOverride=null){
-    const code=codeOverride||label;
-    return el("button",{
-      class:"key"+(wide?" wide":""),
-      text:label,
-      attrs:{type:"button","data-key":code,"aria-label":label==="⌫"?"Backspace":label},
-      onclick:()=>{ focusHiddenInput(); handleKey(code); }
-    });
-  }
-
   function syncKeyboard(){
-    if(!game) return;
     const keys=$$(".key",keyboardEl);
     for(const k of keys){
       const code=k.dataset.key;
-      const letter=code.length===1 && /^[A-Z]$/.test(code)?code:null;
+      const letter=/^[A-Z]$/.test(code)?code:null;
       k.classList.remove("absent","present","correct");
       if(letter){
         const st=game.kb[letter];
@@ -627,7 +531,7 @@
   }
 
   function setLetter(ch){
-    if(!game || !game.inProgress || game.won || game.lost) return;
+    if(!game.inProgress||game.won||game.lost) return;
     if(game.col>=LENGTH) return;
     const r=game.row;
     let g=currentGuess().padEnd(LENGTH," ");
@@ -642,7 +546,7 @@
   }
 
   function backspace(){
-    if(!game || !game.inProgress || game.won || game.lost) return;
+    if(!game.inProgress||game.won||game.lost) return;
     if(game.col===0) return;
     const r=game.row;
     let g=currentGuess().padEnd(LENGTH," ");
@@ -664,7 +568,7 @@
   }
 
   function submit(){
-    if(!game || !game.inProgress || game.won || game.lost) return;
+    if(!game.inProgress||game.won||game.lost) return;
     const guess=currentGuess();
     if(guess.length<LENGTH){
       toast("Not enough letters");
@@ -678,25 +582,7 @@
     }
     const ev=evaluate(game.secret,guess);
     game.evals[game.row]=ev;
-    shadeKeyboard(guess,ev);
-    for(let c=0;c<LENGTH;c++){
-      const t=tileEl(game.row,c);
-      t.classList.add("reveal",ev[c],"flip");
-      t.style.animationDelay=(c*110)+"ms";
-    }
-    const win=ev.every(x=>x==="correct");
-    const last=game.row===ATTEMPTS-1;
-    setTimeout(()=>{
-      if(win) finishGame(true);
-      else if(last) finishGame(false);
-      else{
-        game.row++;
-        game.col=0;
-      }
-    },110*LENGTH+550);
-  }
 
-  function shadeKeyboard(guess,ev){
     const rank={absent:1,present:2,correct:3};
     for(let i=0;i<guess.length;i++){
       const ch=guess[i], st=ev[i];
@@ -704,26 +590,41 @@
       if(!prev || rank[st]>rank[prev]) game.kb[ch]=st;
     }
     syncKeyboard();
+
+    for(let c=0;c<LENGTH;c++){
+      const t=tileEl(game.row,c);
+      t.classList.add("reveal",ev[c],"flip");
+      t.style.animationDelay=(c*110)+"ms";
+    }
+
+    const win=ev.every(x=>x==="correct");
+    const last=game.row===ATTEMPTS-1;
+    setTimeout(()=>{
+      if(win) finish(true);
+      else if(last) finish(false);
+      else{
+        game.row++;
+        game.col=0;
+      }
+    },110*LENGTH+550);
   }
 
-  function finishGame(won){
+  function finish(won){
     game.inProgress=false;
     game.won=won;
     game.lost=!won;
     rememberSecret(game.secret);
-    setSubLine(won ? "You solved it!" : `Answer: ${game.secret}`);
-    toast(won ? "You win!" : `The word was ${game.secret}.`,2100);
+    setSubLine(won? "You solved it!" : `Answer: ${game.secret}`);
+    toast(won? "You win!" : `The word was ${game.secret}.`,2100);
   }
 
   function handleKey(code){
-    if(!game) return;
     if(code==="ENTER"){submit();return;}
     if(code==="BACKSPACE"){backspace();return;}
-    if(code.length===1 && /^[A-Z]$/.test(code)) setLetter(code);
+    if(/^[A-Z]$/.test(code)) setLetter(code);
   }
 
   function handleKeyEvent(e){
-    if(modalOverlay.classList.contains("show")) return;
     if(e.metaKey||e.ctrlKey||e.altKey) return;
     const k=e.key;
     if(k==="Enter"){e.preventDefault();handleKey("ENTER");}
@@ -731,20 +632,9 @@
     else if(/^[a-zA-Z]$/.test(k)){e.preventDefault();handleKey(k.toUpperCase());}
   }
 
-  function focusHiddenInput(){
-    // Small timeout helps iOS reliably show the keyboard. [web:116][web:162]
-    setTimeout(()=>{
-      hiddenInput.focus();
-    },0);
-  }
-
-  function confirmNewGame(){
-    if(game && game.inProgress && !game.won && !game.lost && game.guesses.some(g=>g)){
-      const p=el("p",{class:"help",text:"Start a new game and lose current guesses?"});
-      const cancel=el("button",{class:"btn",text:"Cancel",onclick:()=>{closeModal();}});
-      const ok=el("button",{class:"btn primary",text:"New Game",onclick:()=>{closeModal();startNewGame();}});
-      openModal("New game",[p],[cancel,ok]);
-    }else startNewGame();
+  function focusHidden(){
+    // focusing an actual input is what pops up the keyboard on mobile
+    setTimeout(()=>hiddenInput.focus(),0);
   }
 
   async function startNewGame(){
@@ -752,54 +642,51 @@
     setSubLine("Fetching word…");
     syncBoard();
     syncKeyboard();
-    try{
-      const secret=await fetchSecret();
-      if(!secret){
-        setSubLine("Error fetching word");
-        toast("Could not fetch a word (check connection).");
-        return;
-      }
-      game.secret=secret;
-      game.inProgress=true;
-      game.row=0;
-      game.col=0;
-      game.kb={};
-      syncBoard();
-      syncKeyboard();
-      setSubLine("Guess the word!");
-      focusHiddenInput();
-    }catch{
+    const secret = await fetchSecret();
+    if(!secret){
       setSubLine("Error fetching word");
-      toast("Could not fetch a word (check connection).");
+      toast("Could not fetch a word. Check connection.");
+      return;
     }
+    game.secret=secret;
+    game.inProgress=true;
+    game.row=0;
+    game.col=0;
+    game.kb={};
+    syncBoard();
+    syncKeyboard();
+    setSubLine("Guess the word!");
+    focusHidden();
   }
 
   function init(){
     applyTheme();
     buildBoard();
     buildKeyboard();
-    // Focus hidden input when user taps board/keyboard/anywhere in main area
+    game=emptyGame();
+    syncBoard();
+    syncKeyboard();
+
     ["click","touchstart"].forEach(evt=>{
-      boardEl.addEventListener(evt,focusHiddenInput,{passive:true});
-      keyboardEl.addEventListener(evt,focusHiddenInput,{passive:true});
-      mainEl.addEventListener(evt,focusHiddenInput,{passive:true});
+      boardEl.addEventListener(evt,focusHidden,{passive:true});
+      keyboardEl.addEventListener(evt,focusHidden,{passive:true});
+      mainEl.addEventListener(evt,focusHidden,{passive:true});
     });
+
     hiddenInput.addEventListener("keydown",handleKeyEvent,{passive:false});
-    window.addEventListener("resize",()=>{ if(game){buildBoard();syncKeyboard();} });
-    window.addEventListener("keydown",handleKeyEvent,{passive:false}); // desktop keyboards
+    newBtn.addEventListener("click",startNewGame);
+    darkToggle.addEventListener("change",()=>{
+      settings.dark=!!darkToggle.checked;
+      saveJSON(LS_SETTINGS,settings);
+      applyTheme();
+    });
+    window.addEventListener("resize",()=>{ if(game){buildBoard();syncBoard();} });
+
     startNewGame();
   }
-
-  darkToggle.addEventListener("change",()=>{
-    settings.dark=!!darkToggle.checked;
-    saveJSON(LS_SETTINGS,settings);
-    applyTheme();
-  });
-  newBtn.addEventListener("click",confirmNewGame);
 
   init();
 })();
 </script>
 </body>
 </html>
-``
